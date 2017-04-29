@@ -1,0 +1,5 @@
+(library
+ ((name        tick)
+  (public_name tick)
+  (modules (tick))
+  (libraries (core scid))))
