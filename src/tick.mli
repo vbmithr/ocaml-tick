@@ -1,15 +1,19 @@
 open Core
 
-type side = [`Buy | `Sell]
+type side = [
+  | `buy
+  | `sell
+  | `buy_sell_unset
+]
 
 type t = {
   ts: Time_ns.t;
-  side: side option;
+  side: side;
   p: Int63.t;
   v: Int63.t;
 }
 
-val create : ?side:side -> ts:Time_ns.t -> p:Int63.t -> v:Int63.t -> unit -> t
+val create : ts:Time_ns.t -> side:side -> p:Int63.t -> v:Int63.t -> unit -> t
 
 module Bytes : sig
   val write : ?key_pos:int -> ?data_pos:int -> buf_key:Bytes.t -> buf_data:Bytes.t -> t -> unit

@@ -1,26 +1,30 @@
 open Core
 
-type side = [`Buy | `Sell]
+type side = [
+  | `buy
+  | `sell
+  | `buy_sell_unset
+]
 
 type t = {
   ts: Time_ns.t;
-  side: [`Buy | `Sell] option;
+  side: side;
   p: Int63.t;
   v: Int63.t;
 }
 
-let create ?side ~ts ~p ~v () = { ts ; side ; p ; v }
+let create ~ts ~side ~p ~v () = { ts ; side ; p ; v }
 
 let side_of_int64 = function
-  | 0L -> None
-  | 1L -> Some `Buy
-  | 2L -> Some `Sell
+  | 0L -> `buy_sell_unset
+  | 1L -> `buy
+  | 2L -> `sell
   | _ -> invalid_arg "side_of_int64"
 
 let int64_of_side = function
-  | None -> 0L
-  | Some `Buy -> 1L
-  | Some `Sell -> 2L
+  | `buy_sell_unset -> 0L
+  | `buy -> 1L
+  | `sell -> 2L
 
 let int64_of_v_side v side =
   let open Int64 in
@@ -58,13 +62,13 @@ module TickIO (IO: IO) = struct
     let p = Int63.of_int64_exn @@ get_int64_le b (pos+8) in
     let v = get_int64_le b (pos+16) in
     let v, side = v_side_of_int64 v in
-    create ~ts ~p ~v ?side ()
+    create ~ts ~p ~v ~side ()
 
   let read' ?(pos=0) ~ts ~data () =
     let p = Int63.of_int64_exn @@ get_int64_le data pos in
     let v = get_int64_le data (pos+8) in
     let v, side = v_side_of_int64 v in
-    create ~ts ~p ~v ?side ()
+    create ~ts ~p ~v ~side ()
 end
 
 module BytesIO = struct
@@ -106,7 +110,7 @@ let of_scid_record r =
     ~ts:(ts |> Int63.of_float |> Time_ns.of_int63_ns_since_epoch)
     ~p:(Int63.of_float @@ r.Scid.R.c *. 1e8)
     ~v:(Int63.(of_int64_exn r.Scid.R.total_volume * of_int 10_000))
-    ~side:(if r.Scid.R.bid_volume = 0L then `Buy else `Sell) ()
+    ~side:(if r.Scid.R.bid_volume = 0L then `buy else `sell) ()
 
 let key = B.create 8
 let data = B.create 16
