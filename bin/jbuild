@@ -1,0 +1,5 @@
+(executables
+ ((names (ldb_browser))
+  (public_names (ldb-browser))
+  (preprocess (pps (ppx_sexp_conv)))
+  (libraries (tick leveldb))))

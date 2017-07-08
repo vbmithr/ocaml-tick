@@ -4,14 +4,14 @@ type side = [
   | `buy
   | `sell
   | `buy_sell_unset
-]
+] [@@deriving sexp]
 
 type t = {
   ts: Time_ns.t;
   side: side;
   p: Int63.t;
   v: Int63.t;
-}
+} [@@deriving sexp]
 
 let create ~ts ~side ~p ~v () = { ts ; side ; p ; v }
 

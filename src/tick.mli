@@ -11,7 +11,7 @@ type t = {
   side: side;
   p: Int63.t;
   v: Int63.t;
-}
+} [@@deriving sexp]
 
 val create : ts:Time_ns.t -> side:side -> p:Int63.t -> v:Int63.t -> unit -> t
 
