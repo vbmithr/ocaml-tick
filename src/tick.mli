@@ -101,6 +101,30 @@ module type LDB_WITH_TICK = sig
   val put_tick_batch : writebatch -> t -> unit
   val put_ticks : ?sync:bool -> db -> t list -> unit
   val get_tick : db -> int64 -> t option
+
+  module HL : sig
+    val iter :
+      ?start:Time_ns.t ->
+      ?stop:Time_ns.t -> db ->
+      f:(t -> unit) -> unit
+
+    val rev_iter :
+      ?start:Time_ns.t ->
+      ?stop:Time_ns.t -> db ->
+      f:(t -> unit) -> unit
+
+    val fold_left :
+      ?start:Time_ns.t ->
+      ?stop:Time_ns.t -> db ->
+      init:'a ->
+      f:('a -> t -> 'a) -> 'a
+
+    val fold_right :
+      ?start:Time_ns.t ->
+      ?stop:Time_ns.t -> db ->
+      init:'a ->
+      f:('a -> t -> 'a) -> 'a
+  end
 end
 
 module MakeLDB(DB : LDB) : LDB_WITH_TICK with type db = DB.db

@@ -1,6 +1,6 @@
 open Core
 
-module LevelDB = Tick.MakeLDB(LevelDB)
+module DB = Tick.MakeLDB(LevelDB)
 
 module Stats = struct
   type t = {
@@ -50,11 +50,9 @@ let show tail max_ticks binsize (dbpath, show) () =
   let prev_side = ref `buy in
   let ts_start = ref Time_ns.max_value in
   let ts_stop = ref Time_ns.min_value in
-  let iter_f ts data =
-    let ts = Time_ns.of_int_ns_since_epoch @@ Binary_packing.unpack_signed_64_int_big_endian ~buf:ts ~pos:0 in
-    ts_start := Time_ns.min !ts_start ts;
-    ts_stop := Time_ns.max !ts_stop ts;
-    let tick = Tick.Bytes.read' ~ts ~data () in
+  let iter_f a tick =
+    ts_start := Time_ns.min !ts_start tick.Tick.ts;
+    ts_stop := Time_ns.max !ts_stop tick.ts;
     if show = Rows then Format.printf "%d %a@." !nb_read Sexp.pp @@ Tick.sexp_of_t tick;
     let p = Int63.to_int_exn tick.p in
     let v = Int63.to_int_exn tick.v in
@@ -74,11 +72,14 @@ let show tail max_ticks binsize (dbpath, show) () =
         incr cur_cluster_size
     end;
     prev_side := tick.side;
-    Option.value_map max_ticks ~default:true ~f:(fun max_ticks -> not (!nb_read = max_ticks))
+    succ a
   in
-  let iter_f = (if tail then LevelDB.rev_iter else LevelDB.iter) iter_f in
-  let db = LevelDB.open_db dbpath in
-  Exn.protectx ~f:iter_f db ~finally:LevelDB.close;
+  let db = DB.open_db dbpath in
+  let _nb_record_read =
+    Exn.protect ~finally:(fun () -> DB.close db) ~f:begin fun () ->
+      let fold_f = if tail then DB.HL.fold_right else DB.HL.fold_left in
+      fold_f db ~init:0 ~f:iter_f
+    end in
   match show with
   | Rows -> ()
   | Distrib -> Int.Map.iteri !vdistrib ~f:(fun ~key ~data -> Format.printf "%d %d@." (key * binsize) data)
@@ -102,7 +103,7 @@ let create offset scid db () =
   let nb_records =
     Exn.protectx
       ~finally:LevelDB.close
-      ~f:(fun db -> Tick.File.db_of_scid (module LevelDB) ?offset db scid)
+      ~f:(fun db -> Tick.File.db_of_scid (module DB) ?offset db scid)
       db
   in
   Printf.printf "%d record written.\n" nb_records

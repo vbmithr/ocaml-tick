@@ -181,6 +181,30 @@ module type LDB_WITH_TICK = sig
   val put_tick_batch : writebatch -> t -> unit
   val put_ticks : ?sync:bool -> db -> t list -> unit
   val get_tick : db -> int64 -> t option
+
+  module HL : sig
+    val iter :
+      ?start:Time_ns.t ->
+      ?stop:Time_ns.t -> db ->
+      f:(t -> unit) -> unit
+
+    val rev_iter :
+      ?start:Time_ns.t ->
+      ?stop:Time_ns.t -> db ->
+      f:(t -> unit) -> unit
+
+    val fold_left :
+      ?start:Time_ns.t ->
+      ?stop:Time_ns.t -> db ->
+      init:'a ->
+      f:('a -> t -> 'a) -> 'a
+
+    val fold_right :
+      ?start:Time_ns.t ->
+      ?stop:Time_ns.t -> db ->
+      init:'a ->
+      f:('a -> t -> 'a) -> 'a
+  end
 end
 
 module MakeLDB(DB : LDB) = struct
@@ -207,8 +231,12 @@ module MakeLDB(DB : LDB) = struct
       Some (Bytes.read min_elt,
             Bytes.read max_elt)
 
+  let write_key buf ts =
+    Time_ns.to_int_ns_since_epoch ts |> Int.to_int64 |>
+    Binary_packing.pack_signed_64_big_endian ~buf ~pos:0
+
   let mem_tick db t =
-    Binary_packing.pack_signed_64_big_endian key 0 (Time_ns.to_int63_ns_since_epoch t.ts |> Int63.to_int64);
+    write_key key t.ts ;
     mem db key
 
   let put_tick ?sync db t =
@@ -227,12 +255,56 @@ module MakeLDB(DB : LDB) = struct
     end;
     Batch.write ?sync db batch
 
+  let ts_of_int64 =
+    Fn.compose Time_ns.of_int63_ns_since_epoch Int63.of_int64_exn
+
+  let get_ts buf =
+    Binary_packing.unpack_signed_64_big_endian ~buf ~pos:0 |>
+    Int63.of_int64_exn |>
+    Time_ns.of_int63_ns_since_epoch
+
   let get_tick db ts =
     let open Option.Monad_infix in
     Binary_packing.pack_signed_64_big_endian key 0 ts;
     get db key >>| fun data ->
-    let ts = Int63.of_int64_exn ts |> Time_ns.of_int63_ns_since_epoch in
+    let ts = ts_of_int64 ts in
     Bytes.read' ~ts ~data ()
+
+  module HL = struct
+    let iter ?(start=Time_ns.epoch) ?(stop=Time_ns.max_value) db ~f =
+      let start_key = B.create 8 in
+      let stop_key = B.create 8 in
+      write_key start_key start ;
+      write_key stop_key stop ;
+      iter_from begin fun k v ->
+        let ts = get_ts k in
+        let tick = Bytes.read' ~ts ~data:v () in
+        f tick ;
+        Time_ns.(ts < stop)
+      end db start_key
+
+    let rev_iter ?(start=Time_ns.max_value) ?(stop=Time_ns.epoch) db ~f =
+      let start_key = B.create 8 in
+      let stop_key = B.create 8 in
+      write_key start_key start ;
+      write_key stop_key stop ;
+      rev_iter_from begin fun k v ->
+        let ts = get_ts k in
+        let tick = Bytes.read' ~ts ~data:v () in
+        f tick ;
+        Time_ns.(ts > stop)
+      end db start_key
+
+    let fold_left ?(start=Time_ns.epoch) ?(stop=Time_ns.max_value) db ~init ~f =
+      let acc = ref init in
+      iter ~start ~stop db ~f:(fun ts tick -> acc := f !acc tick) ;
+      !acc
+
+    let fold_right ?(start=Time_ns.max_value) ?(stop=Time_ns.epoch) db ~init ~f =
+      let acc = ref init in
+      rev_iter ~start ~stop db ~f:(fun ts tick -> acc := f !acc tick) ;
+      !acc
+  end
 end
 
 module File = struct
