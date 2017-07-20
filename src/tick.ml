@@ -273,9 +273,7 @@ module MakeLDB(DB : LDB) = struct
   module HL = struct
     let iter ?(start=Time_ns.epoch) ?(stop=Time_ns.max_value) db ~f =
       let start_key = B.create 8 in
-      let stop_key = B.create 8 in
       write_key start_key start ;
-      write_key stop_key stop ;
       iter_from begin fun k v ->
         let ts = get_ts k in
         let tick = Bytes.read' ~ts ~data:v () in
@@ -285,9 +283,7 @@ module MakeLDB(DB : LDB) = struct
 
     let rev_iter ?(start=Time_ns.max_value) ?(stop=Time_ns.epoch) db ~f =
       let start_key = B.create 8 in
-      let stop_key = B.create 8 in
       write_key start_key start ;
-      write_key stop_key stop ;
       rev_iter_from begin fun k v ->
         let ts = get_ts k in
         let tick = Bytes.read' ~ts ~data:v () in
