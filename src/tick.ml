@@ -174,6 +174,7 @@ end
 module type LDB_WITH_TICK = sig
   include LDB
 
+  val with_db : string -> f:(db -> 'a) -> 'a
   val length : db -> int
   val bounds : db -> (t * t) option
   val mem_tick : db -> t -> bool
@@ -209,6 +210,10 @@ end
 
 module MakeLDB(DB : LDB) = struct
   include DB
+
+  let with_db path ~f =
+    let db = open_db path in
+    Exn.protect ~finally:(fun () -> close db) ~f:(fun () -> f db)
 
   let length db =
     let cnt = ref 0 in

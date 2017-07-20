@@ -74,14 +74,13 @@ let show tail max_ticks binsize (dbpath, show) () =
     prev_side := tick.side;
     succ a
   in
-  let db = DB.open_db dbpath in
-  let _nb_record_read =
-    Exn.protect ~finally:(fun () -> DB.close db) ~f:begin fun () ->
+  let nb_records_read = DB.with_db dbpath ~f:begin fun db ->
+      Format.printf "DB has %d records.@." (DB.length db) ;
       let fold_f = if tail then DB.HL.fold_right else DB.HL.fold_left in
       fold_f db ~init:0 ~f:iter_f
     end in
   match show with
-  | Rows -> ()
+  | Rows -> Format.printf "Parsed %d records.@." nb_records_read
   | Distrib -> Int.Map.iteri !vdistrib ~f:(fun ~key ~data -> Format.printf "%d %d@." (key * binsize) data)
   | Stats ->
     let avg_p = !sum_p / !nb_read in

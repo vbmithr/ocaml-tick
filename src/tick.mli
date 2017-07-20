@@ -94,6 +94,7 @@ end
 module type LDB_WITH_TICK = sig
   include LDB
 
+  val with_db : string -> f:(db -> 'a) -> 'a
   val length : db -> int
   val bounds : db -> (t * t) option
   val mem_tick : db -> t -> bool
