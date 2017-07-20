@@ -297,12 +297,12 @@ module MakeLDB(DB : LDB) = struct
 
     let fold_left ?(start=Time_ns.epoch) ?(stop=Time_ns.max_value) db ~init ~f =
       let acc = ref init in
-      iter ~start ~stop db ~f:(fun ts tick -> acc := f !acc tick) ;
+      iter ~start ~stop db ~f:(fun tick -> acc := f !acc tick) ;
       !acc
 
     let fold_right ?(start=Time_ns.max_value) ?(stop=Time_ns.epoch) db ~init ~f =
       let acc = ref init in
-      rev_iter ~start ~stop db ~f:(fun ts tick -> acc := f !acc tick) ;
+      rev_iter ~start ~stop db ~f:(fun tick -> acc := f !acc tick) ;
       !acc
   end
 end
