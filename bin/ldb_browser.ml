@@ -116,7 +116,7 @@ let show =
     +> flag "-binsize" (optional_with_default 1 int) ~doc:"int binsize for histograms"
     +> anon (t2 ("db" %: string) ("section" %: string))
   in
-  Command.basic ~summary:"Show LevelDB tick databases" spec show
+  Command.basic_spec ~summary:"Show LevelDB tick databases" spec show
 
 let create =
   let spec =
@@ -126,7 +126,7 @@ let create =
     +> anon ("scid" %: string)
     +> anon ("db" %: string)
   in
-  Command.basic ~summary:"Create LevelDB tick dbs from scid files" spec create
+  Command.basic_spec ~summary:"Create LevelDB tick dbs from scid files" spec create
 
 let command =
   Command.group

@@ -72,7 +72,7 @@ module TickIO (IO: IO) = struct
 end
 
 module BytesIO = struct
-  include String
+  include Bytes
   let get_int64_be buf pos = Binary_packing.unpack_signed_64_big_endian ~buf ~pos
   let set_int64_be buf pos = Binary_packing.pack_signed_64_big_endian ~buf ~pos
   let get_int64_le buf pos = Binary_packing.unpack_signed_64_little_endian ~buf ~pos
@@ -87,23 +87,21 @@ module BigstringIO = struct
   let set_int64_le buf pos = unsafe_set_int64_t_le buf ~pos
 end
 
-module B = Bytes
-
-module Bytes = TickIO(BytesIO)
-module Bigstring = TickIO(BigstringIO)
 
 let hdr_size = 16
 let size = 24
 let version = 1
 
 let hdr =
-  let b = String.create 16 in
-  String.blit "TICK" 0 b 0 4;
+  let b = Bytes.create 16 in
+  Bytes.From_string.blit "TICK" 0 b 0 4;
   Binary_packing.pack_unsigned_16_little_endian b 4 hdr_size;
   Binary_packing.pack_unsigned_16_little_endian b 6 size;
   Binary_packing.pack_unsigned_16_little_endian b 8 version;
-  b
+  Bytes.unsafe_to_string b
 
+module TickBytes = TickIO(BytesIO)
+module TickBigstring = TickIO(BigstringIO)
 let of_scid_record r =
   let ts = (r.Scid.R.datetime -. 25569.) *.  86400. *. 1e9 in (* unix ts in nanoseconds *)
   create
@@ -112,8 +110,8 @@ let of_scid_record r =
     ~v:(Int63.(of_int64_exn r.Scid.R.total_volume * of_int 10_000))
     ~side:(if r.Scid.R.bid_volume = 0L then `buy else `sell) ()
 
-let key = B.create 8
-let data = B.create 16
+let key = Bytes.create 8
+let data = Bytes.create 16
 
 module type LDB = sig
   exception Error of string
@@ -160,8 +158,8 @@ module type LDB = sig
     val next : iterator -> unit
     val prev : iterator -> unit
     val valid : iterator -> bool
-    val fill_key : iterator -> string ref -> int
-    val fill_value : iterator -> string ref -> int
+    val fill_key : iterator -> Bytes.t ref -> int
+    val fill_value : iterator -> Bytes.t ref -> int
     val get_key : iterator -> string
     val get_value : iterator -> string
     val iter : (string -> string -> bool) -> iterator -> unit
@@ -223,18 +221,18 @@ module MakeLDB(DB : LDB) = struct
   let bounds db =
     if length db = 0 then None
     else
-      let min_elt = String.create size in
-      let max_elt = String.create size in
+      let min_elt = Bytes.create size in
+      let max_elt = Bytes.create size in
       iter (fun k v ->
-          String.blit k 0 min_elt 0 8;
-          String.blit v 0 min_elt 8 16;
+          Bytes.From_string.blit k 0 min_elt 0 8;
+          Bytes.From_string.blit v 0 min_elt 8 16;
           false) db;
       rev_iter (fun k v ->
-          String.blit k 0 max_elt 0 8;
-          String.blit v 0 min_elt 8 16;
+          Bytes.From_string.blit k 0 max_elt 0 8;
+          Bytes.From_string.blit v 0 min_elt 8 16;
           false) db;
-      Some (Bytes.read min_elt,
-            Bytes.read max_elt)
+      Some (TickBytes.read min_elt,
+            TickBytes.read max_elt)
 
   let write_key buf ts =
     Time_ns.to_int_ns_since_epoch ts |> Int.to_int64 |>
@@ -242,21 +240,27 @@ module MakeLDB(DB : LDB) = struct
 
   let mem_tick db t =
     write_key key t.ts ;
-    mem db key
+    mem db (Bytes.unsafe_to_string key)
 
   let put_tick ?sync db t =
-    Bytes.write ~buf_key:key ~buf_data:data t;
-    put ?sync db key data
+    TickBytes.write ~buf_key:key ~buf_data:data t;
+    put ?sync db
+      (Bytes.unsafe_to_string key)
+      (Bytes.unsafe_to_string data)
 
   let put_tick_batch batch t =
-    Bytes.write ~buf_key:key ~buf_data:data t;
-    Batch.put batch key data
+    TickBytes.write ~buf_key:key ~buf_data:data t;
+    Batch.put batch
+      (Bytes.unsafe_to_string key)
+      (Bytes.unsafe_to_string data)
 
   let put_ticks ?sync db ts =
     let batch = Batch.make () in
     List.iter ts ~f:begin fun t ->
-      Bytes.write ~buf_key:key ~buf_data:data t;
-      Batch.put batch key data
+      TickBytes.write ~buf_key:key ~buf_data:data t;
+      Batch.put batch
+        (Bytes.unsafe_to_string key)
+        (Bytes.unsafe_to_string data)
     end;
     Batch.write ?sync db batch
 
@@ -264,6 +268,7 @@ module MakeLDB(DB : LDB) = struct
     Fn.compose Time_ns.of_int63_ns_since_epoch Int63.of_int64_exn
 
   let get_ts buf =
+    let buf = Bytes.unsafe_of_string_promise_no_mutation buf in
     Binary_packing.unpack_signed_64_big_endian ~buf ~pos:0 |>
     Int63.of_int64_exn |>
     Time_ns.of_int63_ns_since_epoch
@@ -271,30 +276,32 @@ module MakeLDB(DB : LDB) = struct
   let get_tick db ts =
     let open Option.Monad_infix in
     Binary_packing.pack_signed_64_big_endian key 0 ts;
-    get db key >>| fun data ->
+    get db (Bytes.unsafe_to_string key) >>| fun data ->
     let ts = ts_of_int64 ts in
-    Bytes.read' ~ts ~data ()
+    let data = Bytes.unsafe_of_string_promise_no_mutation data in
+    TickBytes.read' ~ts ~data ()
 
   module HL = struct
-    let iter ?(start=Time_ns.epoch) ?(stop=Time_ns.max_value) db ~f =
-      let start_key = B.create 8 in
-      write_key start_key start ;
+    let start_key start =
+      let buf = Bytes.create 8 in
+      write_key buf start ;
+      Bytes.unsafe_to_string buf
+
+    let iter' direction ~start ~stop db ~f =
+      let start_key = start_key start in
       iter_from begin fun k v ->
         let ts = get_ts k in
-        let tick = Bytes.read' ~ts ~data:v () in
+        let tick = TickBytes.read' ~ts
+            ~data:(Bytes.unsafe_of_string_promise_no_mutation v) () in
         f tick ;
         Time_ns.(ts < stop)
       end db start_key
 
+    let iter ?(start=Time_ns.epoch) ?(stop=Time_ns.max_value) db ~f =
+      iter' iter_from ~start ~stop db ~f
+
     let rev_iter ?(start=Time_ns.max_value) ?(stop=Time_ns.epoch) db ~f =
-      let start_key = B.create 8 in
-      write_key start_key start ;
-      rev_iter_from begin fun k v ->
-        let ts = get_ts k in
-        let tick = Bytes.read' ~ts ~data:v () in
-        f tick ;
-        Time_ns.(ts > stop)
-      end db start_key
+      iter' rev_iter_from ~start ~stop db ~f
 
     let fold_left ?start ?stop db ~init ~f =
       let acc = ref init in
@@ -311,12 +318,12 @@ end
 module File = struct
   let of_scid ic oc =
     let open Scid in
-    let buf = B.create size in
+    let buf = Bytes.create size in
     let d = D.make @@ Channel ic in
     let rec loop nb_records = match D.decode d with
       | R r ->
         let t = of_scid_record r in
-        Bytes.write ~buf_key:key ~buf_data:data t;
+        TickBytes.write ~buf_key:key ~buf_data:data t;
         Out_channel.output oc buf 0 size;
         loop (succ nb_records)
       | End -> nb_records
@@ -327,18 +334,18 @@ module File = struct
     loop 0
 
   let bounds ic =
-    let buf = B.create size in
+    let buf = Bytes.create size in
     let nb_read = In_channel.input ic ~buf ~pos:0 ~len:hdr_size in
-    if nb_read <> hdr_size || String.sub buf 0 hdr_size <> hdr
+    if nb_read <> hdr_size || Bytes.To_string.sub buf 0 hdr_size <> hdr
     then Error (Invalid_argument
                   (Printf.sprintf "corrupted header: read %S"
-                     (String.sub buf 0 nb_read)))
+                     (Bytes.To_string.sub buf 0 nb_read)))
     else
       let nb_read_fst = In_channel.input ic ~buf ~pos:0 ~len:size in
-      let min_elt = Bytes.read buf in
+      let min_elt = TickBytes.read buf in
       In_channel.(Int64.(seek ic @@ length ic - of_int size));
       let nb_read_snd = In_channel.input ic ~buf ~pos:0 ~len:size in
-      let max_elt = Bytes.read buf in
+      let max_elt = TickBytes.read buf in
       if nb_read_fst + nb_read_snd <> 2 * size
       then Error End_of_file
       else (In_channel.seek ic 0L; Result.return (min_elt, max_elt))
@@ -356,8 +363,8 @@ module File = struct
     let nb_ticks = ref 0 in
     DB.iter (fun k v ->
         incr nb_ticks;
-        Out_channel.output oc ~buf:k ~pos:0 ~len:8;
-        Out_channel.output oc ~buf:v ~pos:0 ~len:16;
+        Out_channel.output_substring oc ~buf:k ~pos:0 ~len:8;
+        Out_channel.output_substring oc ~buf:v ~pos:0 ~len:16;
         true) db;
     return
       (if (!cnt = 2) then !nb_ticks, Some (min_elt, max_elt) else 0, None)
@@ -369,7 +376,7 @@ module File = struct
     let module DB = (val ldb : LDB_WITH_TICK with type db = db) in
     let open Result in
     bounds ic >>= fun (min_elt, max_elt) ->
-    let buf = B.create size in
+    let buf = Bytes.create size in
     let cnt = Int64.((In_channel.length ic - of_int hdr_size) / (of_int size) |> to_int_exn) in
     if cnt = 0 then
       Ok (0, None)
@@ -378,7 +385,9 @@ module File = struct
       let rec loop () =
         In_channel.really_input ic ~buf ~pos:0 ~len:size |> function
         | None -> Ok (cnt, Some (min_elt, max_elt))
-        | Some () -> DB.put db (String.sub buf 0 8) (String.sub buf 8 16); loop ()
+        | Some () -> DB.put db
+                       (Bytes.To_string.sub buf 0 8)
+                       (Bytes.To_string.sub buf 8 16); loop ()
       in loop ()
     end
 
@@ -388,15 +397,17 @@ module File = struct
     ?(offset=Time_ns.epoch) db fn =
     let module DB = (val ldb : LDB_WITH_TICK with type db = db) in
     let open Scid in
-    let buf = B.create size in
+    let buf = Bytes.create size in
     In_channel.with_file ~binary:true fn ~f:(fun ic ->
         let d = D.make @@ Channel ic in
         let rec loop nb_records = match D.decode d with
           | R r ->
             let t = of_scid_record r in
             if Time_ns.(t.ts > offset) then begin
-              Bytes.write ~buf_key:key ~buf_data:data t;
-              DB.put db (String.sub buf 0 8) (String.sub buf 8 16);
+              TickBytes.write ~buf_key:key ~buf_data:data t;
+              DB.put db
+                (Bytes.To_string.sub buf 0 8)
+                (Bytes.To_string.sub buf 8 16);
               loop @@ succ nb_records
             end
             else loop nb_records

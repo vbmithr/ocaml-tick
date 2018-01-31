@@ -15,13 +15,13 @@ type t = {
 
 val create : ts:Time_ns.t -> side:side -> p:Int63.t -> v:Int63.t -> unit -> t
 
-module Bytes : sig
+module TickBytes : sig
   val write : ?key_pos:int -> ?data_pos:int -> buf_key:Bytes.t -> buf_data:Bytes.t -> t -> unit
   val read : ?pos:int -> Bytes.t -> t
   val read' : ?pos:int -> ts:Time_ns.t -> data:Bytes.t -> unit -> t
 end
 
-module Bigstring : sig
+module TickBigstring : sig
   val write : ?key_pos:int -> ?data_pos:int -> buf_key:Bigstring.t -> buf_data:Bigstring.t -> t -> unit
   val read : ?pos:int -> Bigstring.t -> t
   val read' : ?pos:int -> ts:Time_ns.t -> data:Bigstring.t -> unit -> t
@@ -80,8 +80,8 @@ module type LDB = sig
     val next : iterator -> unit
     val prev : iterator -> unit
     val valid : iterator -> bool
-    val fill_key : iterator -> string ref -> int
-    val fill_value : iterator -> string ref -> int
+    val fill_key : iterator -> Bytes.t ref -> int
+    val fill_value : iterator -> Bytes.t ref -> int
     val get_key : iterator -> string
     val get_value : iterator -> string
     val iter : (string -> string -> bool) -> iterator -> unit
