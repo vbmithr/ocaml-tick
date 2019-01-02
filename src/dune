@@ -1,0 +1,6 @@
+(library
+ (name        tick)
+ (public_name tick)
+ (preprocess (pps ppx_sexp_conv))
+ (modules tick)
+ (libraries core scid))
