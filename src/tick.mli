@@ -109,18 +109,7 @@ module type LDB_WITH_TICK = sig
       ?stop:Time_ns.t -> db ->
       f:(t -> unit) -> unit
 
-    val rev_iter :
-      ?start:Time_ns.t ->
-      ?stop:Time_ns.t -> db ->
-      f:(t -> unit) -> unit
-
     val fold_left :
-      ?start:Time_ns.t ->
-      ?stop:Time_ns.t -> db ->
-      init:'a ->
-      f:('a -> t -> 'a) -> 'a
-
-    val fold_right :
       ?start:Time_ns.t ->
       ?stop:Time_ns.t -> db ->
       init:'a ->
@@ -155,7 +144,6 @@ module File : sig
     In_channel.t -> 'a -> (int * (t * t) option, exn) Result.t
 
   val of_db :
-    (module LDB_WITH_TICK with type db = 'a) ->
-    ?start_ts:int64 -> ?end_ts:int64 -> 'a ->
+    (module LDB_WITH_TICK with type db = 'a) -> 'a ->
     Out_channel.t -> (int * (t * t) option, exn) Result.t
 end
