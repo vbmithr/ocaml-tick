@@ -1,6 +1,5 @@
-opam-version: "1.2"
+opam-version: "2.0"
 name: "tick"
-version: "1.0"
 maintainer: "Vincent Bernardoff <vb@luminar.eu.org>"
 authors: ["Vincent Bernardoff <vb@luminar.eu.org>"]
 homepage: "https://github.com/vbmithr/ocaml-tick"
@@ -9,11 +8,11 @@ license: "ISC"
 dev-repo: "git+https://github.com/vbmithr/ocaml-tick.git"
 bug-reports: "https://github.com/vbmithr/ocaml-tick/issues"
 tags: []
-available: [ ocaml-version >= "4.03.0" ]
 depends: [
-  "jbuilder" {build & >= "1.0+beta8"}
-  "core" {>= "0.9"}
+  "ocaml" {>= "4.03.0"}
+  "dune" {build & >= "1.0"}
+  "core"
   "scid" {>= "1.0"}
 ]
 depopts: []
-build:[[ "jbuilder" "build" "@install" ]]
+build:[[ "dune" "build" "-p" name "-j" jobs ]]
